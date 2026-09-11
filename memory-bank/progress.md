@@ -1,6 +1,6 @@
 # Progress — Nexova
 
-_Última actualización: 2026-09-11 (scaffolding + landing page de `uis/website/`; dashboard shell de `uis/backoffice/`; esqueleto de `services/api/`)._
+_Última actualización: 2026-09-11 (scaffolding + landing page de `uis/website/`; dashboard shell de `uis/backoffice/`; esqueleto de `services/api/`; fix de `validate-context-alignment` para apps multi-componente; entrega en `feature/agent-memory-bank`)._
 
 ## Qué existe hoy
 
@@ -38,6 +38,13 @@ _Última actualización: 2026-09-11 (scaffolding + landing page de `uis/website/
 - [x] Verificado de verdad: entorno virtual, `pip install -r requirements.txt`, `uvicorn app.main:app` levantado y probado con `curl` (`/`, `/health`, `/openapi.json`) — no solo escrito, corrido.
 - [x] Autocontenido (`requirements.txt` propio), sin tooling de Python compartido en la raíz — mismo patrón que `uis/website` y `uis/backoffice`.
 - [ ] Ningún endpoint de dominio real todavía — nada en `uis/website`/`uis/backoffice` lo llama aún (el formulario de `/talento` sigue simulando el envío).
+
+### `skills/validate-context-alignment/` — corregido para apps multi-componente (React SPA)
+
+- [x] **Bug real encontrado y corregido**: la skill asumía un sitio de un solo archivo HTML estático; contra la SPA de React real de `uis/website` reportaba 51 falsos "faltantes" (Header, Hero, Servicios, etc. — todo ya construido). Causas: (1) texto partido por tags inline (`<strong>...</strong> resto`), (2) `&copy;` sin decodificar, (3) saltos de línea del código fuente que JSX colapsa al renderizar.
+- [x] Fix sin nuevas dependencias (`html.unescape`, stdlib): nueva función `_prose_text` (quita tags, decodifica entidades, colapsa espacios) aplicada a todo excepto al bloque Schema.org; nuevo flag `--combine` para tratar varios archivos/directorios como una sola página.
+- [x] Verificado que no rompió los criterios de aceptación existentes (`sample_pass.html`/`sample_fail.html` dan exactamente el mismo resultado) y que, corriendo `--combine uis/website/index.html uis/website/src`, ahora solo reporta como faltante lo que de verdad falta: el formulario de `/talento` (punto 4 de abajo) — nada más.
+- [x] `SKILL.md` actualizado con el nuevo input, ejemplo de uso y 2 criterios de aceptación nuevos (8 y 9).
 
 ## Qué falta (Hito 1 — sitio web público)
 

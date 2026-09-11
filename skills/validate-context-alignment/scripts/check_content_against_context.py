@@ -13,12 +13,25 @@ it automatically.
 
 Usage:
     python3 check_content_against_context.py <target_file> [<target_file> ...]
+    python3 check_content_against_context.py --combine <target> [<target> ...]
     python3 check_content_against_context.py --dump-requirements
     python3 check_content_against_context.py --context path/to/CONTEXT.md <target_file>
 
 Args:
     target_file          One or more built files (HTML/JS/TSX/...) to check.
-                          Required unless --dump-requirements is given.
+                          Required unless --dump-requirements is given. Each
+                          is checked SEPARATELY — every one must, on its own,
+                          contain everything required.
+    --combine             Treat all given targets as one combined page instead
+                          of checking each separately. A target may be a file
+                          or a directory (directories are read recursively,
+                          restricted to *.html/*.js/*.jsx/*.ts/*.tsx, skipping
+                          node_modules/dist/.git) and every matched file's
+                          text is concatenated before checking. Use this for
+                          a component-based app (e.g. a React SPA) where the
+                          required copy is split across several source files
+                          instead of living in one static HTML file — e.g.
+                          `--combine uis/website/index.html uis/website/src`.
     --context <path>     Path to CONTEXT.md. Defaults to CONTEXT.md at the
                           repo root (three levels up from this script).
     --dump-requirements  Print every requirement extracted from CONTEXT.md
@@ -35,12 +48,31 @@ No third-party dependencies — stdlib only.
 """
 from __future__ import annotations
 
+import html
 import json
 import re
 import sys
 from pathlib import Path
 
 DEFAULT_CONTEXT_PATH = Path(__file__).resolve().parents[3] / "CONTEXT.md"
+
+COMBINE_EXTENSIONS = {".html", ".js", ".jsx", ".ts", ".tsx"}
+COMBINE_SKIP_DIRS = {"node_modules", "dist", ".git", "__pycache__"}
+
+
+def _iter_combine_files(target: Path):
+    """Yield files to read for --combine: the file itself, or every matching
+    file under a directory (recursive, deterministic order, skipping build/
+    dependency directories)."""
+    if target.is_file():
+        yield target
+        return
+    for path in sorted(target.rglob("*")):
+        if not path.is_file() or path.suffix not in COMBINE_EXTENSIONS:
+            continue
+        if COMBINE_SKIP_DIRS & set(path.relative_to(target).parts):
+            continue
+        yield path
 
 
 def _section(text: str, heading: str) -> str:
@@ -204,11 +236,11 @@ def _flatten_strings(value) -> list[str]:
     return out
 
 
-def _find_ld_json_blocks(html: str) -> list[dict]:
+def _find_ld_json_blocks(source: str) -> list[dict]:
     blocks = []
     for match in re.finditer(
         r'<script[^>]*type=["\']application/ld\+json["\'][^>]*>(.*?)</script>',
-        html,
+        source,
         re.DOTALL | re.IGNORECASE,
     ):
         try:
@@ -216,6 +248,20 @@ def _find_ld_json_blocks(html: str) -> list[dict]:
         except json.JSONDecodeError:
             continue
     return blocks
+
+
+def _prose_text(raw: str) -> str:
+    """Normalize markup-bearing source for literal prose/label matching:
+    strip HTML/JSX tags, decode HTML entities, and collapse whitespace runs
+    (including newlines/indentation) to a single space. Component-based UIs
+    split one visible sentence across inline tags (`<strong>X</strong> Y`
+    still reads as "X Y"), wrap long text across source lines (JSX collapses
+    that whitespace when rendering, same as HTML), and sometimes write
+    `&copy;` instead of the literal "©" — all render correctly but defeat a
+    naive raw-text substring check. Not used for the Schema.org check, which
+    parses <script> blocks from the raw source directly."""
+    unescaped = html.unescape(re.sub(r"<[^>]*>", "", raw))
+    return re.sub(r"\s+", " ", unescaped)
 
 
 def check_target(target_text: str, requirements: dict) -> list[str]:
@@ -234,52 +280,57 @@ def check_target(target_text: str, requirements: dict) -> list[str]:
         for value in sorted(expected_values - found_values):
             missing.append(f"Schema.org: missing/incorrect value '{value}'")
 
+    # Everything else is prose/labels: match against tag-stripped,
+    # entity-decoded text so inline markup and named entities don't produce
+    # false negatives (see _prose_text).
+    prose_text = _prose_text(target_text)
+
     for field in requirements["form_fields"]:
-        if field not in target_text:
+        if field not in prose_text:
             missing.append(f"Form field label not found: '{field}'")
 
     for item in requirements["error_messages"]:
         msg = item["message"]
-        if msg not in target_text:
+        if msg not in prose_text:
             missing.append(f"Error message not found for '{item['field']}': \"{msg}\"")
-        elif item["dynamic_suffix"] and "quedan" not in target_text.lower():
+        elif item["dynamic_suffix"] and "quedan" not in prose_text.lower():
             missing.append(
                 f"Error message for '{item['field']}' found, but no live 'quedan N' "
                 f"remaining-characters counter text was found nearby"
             )
 
     for line in requirements["success_message"]:
-        if line not in target_text:
+        if line not in prose_text:
             missing.append(f"Success message line not found: \"{line}\"")
 
-    if requirements["restriction_message"] and requirements["restriction_message"] not in target_text:
+    if requirements["restriction_message"] and requirements["restriction_message"] not in prose_text:
         missing.append(f"Restriction message not found: \"{requirements['restriction_message']}\"")
 
     for label, value in requirements["contact_info"].items():
-        if value not in target_text:
+        if value not in prose_text:
             missing.append(f"Contact info not found ({label}): '{value}'")
 
     for item in requirements["footer"]:
-        if item not in target_text:
+        if item not in prose_text:
             missing.append(f"Footer content not found: '{item}'")
 
     for item in requirements["header"]:
-        if item not in target_text:
+        if item not in prose_text:
             missing.append(f"Header content not found: '{item}'")
 
     for key, value in requirements["hero"].items():
-        if value not in target_text:
+        if value not in prose_text:
             missing.append(f"Hero {key} not found: \"{value}\"")
 
     for service in requirements["services"]:
-        if service["title"] not in target_text:
+        if service["title"] not in prose_text:
             missing.append(f"Service title not found: '{service['title']}'")
         for bullet in service["bullets"]:
-            if bullet not in target_text:
+            if bullet not in prose_text:
                 missing.append(f"Service bullet not found ('{service['title']}'): '{bullet}'")
 
     for item in requirements["why_nexova"]:
-        if item not in target_text:
+        if item not in prose_text:
             missing.append(f"'Por qué Nexova' bullet not found: '{item}'")
 
     return missing
@@ -296,6 +347,10 @@ def main() -> int:
     dump_only = "--dump-requirements" in args
     if dump_only:
         args = [a for a in args if a != "--dump-requirements"]
+
+    combine = "--combine" in args
+    if combine:
+        args = [a for a in args if a != "--combine"]
 
     if not context_path.exists():
         print(f"ERROR: CONTEXT.md not found at {context_path}", file=sys.stderr)
@@ -317,6 +372,27 @@ def main() -> int:
         print("ERROR: no target file given. Pass at least one file to check, "
               "or use --dump-requirements.", file=sys.stderr)
         return 1
+
+    if combine:
+        label = "--combine " + " ".join(args)
+        texts = []
+        for target_arg in args:
+            target_path = Path(target_arg)
+            if not target_path.exists():
+                print(f"FAIL  {label}\n      - path does not exist: {target_arg}")
+                return 1
+            for file_path in _iter_combine_files(target_path):
+                texts.append(file_path.read_text(encoding="utf-8", errors="replace"))
+        target_text = "\n".join(texts)
+        missing = check_target(target_text, requirements)
+
+        if missing:
+            print(f"FAIL  {label}  ({len(missing)} missing)")
+            for item in missing:
+                print(f"      - {item}")
+            return 1
+        print(f"OK    {label}")
+        return 0
 
     exit_code = 0
     for target_arg in args:
