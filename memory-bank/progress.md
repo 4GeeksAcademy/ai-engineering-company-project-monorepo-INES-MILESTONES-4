@@ -22,7 +22,8 @@ _Última actualización: 2026-09-11 (scaffolding + landing page de `uis/website/
 - [x] **Marcado Schema.org** tipo `Organization` — bloque JSON-LD exacto de `CONTEXT.md` embebido tal cual en `index.html`.
 - [x] Paleta de marca (`brand-*`/`accent-*`) definida vía `@theme` en `src/index.css` — placeholder razonable (indigo + acento ámbar), reemplazable si Carmen Ruiz da guías de marca reales.
 - [x] Ruta `/talento` creada como stub (enlazada desde el CTA del Hero y desde el nav) para que la navegación no quede rota — el formulario real es el punto 4 más abajo.
-- [ ] **Nada de esto está aún conectado a backend**: no hay backend FastAPI, no hay `package.json`/`tsconfig`/`docker-compose.yml` en la raíz del monorepo (fuera de alcance de este paso).
+- [x] **Formulario de talento** implementado con validación real, mensajes exactos de `CONTEXT.md`, mensaje de éxito y redirección visible para empresas — conectado al backend real vía `fetch` a `POST /talent` (ya no simula el envío; ver `services/api/` más abajo).
+- [ ] Siguen sin existir `package.json`/`tsconfig`/`docker-compose.yml` en la raíz del monorepo (fuera de alcance de este paso).
 
 ### `uis/backoffice/` — fuera del alcance de Hito 1, adelantado por pedido explícito
 
@@ -32,12 +33,14 @@ _Última actualización: 2026-09-11 (scaffolding + landing page de `uis/website/
 - [x] Sidebar con ítems deshabilitados ("Candidatos", "Vacantes", "Formación") marcados "Próx." para dejar visible la estructura futura del backoffice (ver `uis/README.md`) sin construirlos todavía.
 - [ ] Todo lo demás (autenticación, CRUD de candidatos/vacantes, tickets, chatbot) sigue sin empezar — ver `company-choice.md` para la visión a mediano plazo.
 
-### `services/api/` — esqueleto del backend centralizado (a pedido explícito, sigue fuera de Hito 1)
+### `services/api/` — backend centralizado (a pedido explícito, sigue fuera de Hito 1)
 
-- [x] App FastAPI mínima (`app/main.py`) con `GET /` y `GET /health`, estructura `app/routers/` lista para routers de dominio (`candidates.py`, `vacancies.py`, `talent.py`, …) — sigue la convención ya documentada en `AGENTS.md`/`README.md` ("un backend centralizado, routers por dominio, no microservicios").
-- [x] Verificado de verdad: entorno virtual, `pip install -r requirements.txt`, `uvicorn app.main:app` levantado y probado con `curl` (`/`, `/health`, `/openapi.json`) — no solo escrito, corrido.
-- [x] Autocontenido (`requirements.txt` propio), sin tooling de Python compartido en la raíz — mismo patrón que `uis/website` y `uis/backoffice`.
-- [ ] Ningún endpoint de dominio real todavía — nada en `uis/website`/`uis/backoffice` lo llama aún (el formulario de `/talento` sigue simulando el envío).
+- [x] App FastAPI (`app/main.py`) con `GET /`, `GET /health` y `POST /talent`, estructura `app/routers/` lista para más routers de dominio (`candidates.py`, `vacancies.py`, …) — sigue la convención ya documentada en `AGENTS.md`/`README.md` ("un backend centralizado, routers por dominio, no microservicios").
+- [x] **`POST /talent`** (`app/routers/talent.py`) — endpoint real de registro de talento con validación Pydantic (`EmailStr`, teléfono con código de país, años de experiencia 0-50, LinkedIn opcional con URL válida, comentarios ≤500 caracteres, consentimiento obligatorio) y mensajes de error en español.
+- [x] `CORSMiddleware` en `app/main.py` habilitando `http://localhost:3000` / `http://127.0.0.1:3000` (origen de `uis/website` en dev) para `GET`/`POST`.
+- [x] Tests (`tests/test_talent_router.py`, `pytest` + `TestClient`) cubriendo el caso de éxito y el preflight CORS — verificados corriendo de verdad (`pytest`: 2 passed).
+- [x] Autocontenido (`requirements.txt` propio, incluye `pydantic[email]`), sin tooling de Python compartido en la raíz — mismo patrón que `uis/website` y `uis/backoffice`.
+- [ ] Los datos recibidos no se persisten todavía (no hay base de datos) — el endpoint valida y responde, pero no guarda el registro en ningún sitio.
 
 ### `skills/validate-context-alignment/` — corregido para apps multi-componente (React SPA)
 
@@ -51,22 +54,20 @@ _Última actualización: 2026-09-11 (scaffolding + landing page de `uis/website/
 1. ~~Elegir y montar el toolchain de `uis/website/`~~ — hecho (Vite + React + React Router + Tailwind, ver arriba).
 2. ~~Landing page con las secciones exactas de `CONTEXT.md`~~ — hecho.
 3. ~~Marcado Schema.org~~ — hecho.
-4. **Formulario de registro de talento** en la página `/talento` (hoy es un stub), con los 11 campos, tipos, validaciones y mensajes de error exactos de `CONTEXT.md` (nombre, email, teléfono, país, años de experiencia, sector, inglés, disponibilidad, LinkedIn opcional, comentarios ≤500 caracteres con contador, checkbox de consentimiento obligatorio).
-5. **Mensaje de éxito** al enviar (simulado) y **mensaje de redirección** para empresas que buscan contratar servicios (no candidatos).
+4. ~~Formulario de registro de talento~~ — hecho: los 11 campos, tipos, validaciones y mensajes de error exactos de `CONTEXT.md` (nombre, email, teléfono, país, años de experiencia, sector, inglés, disponibilidad, LinkedIn opcional, comentarios ≤500 caracteres con contador, checkbox de consentimiento obligatorio), conectado a `POST /talent` en `services/api/`.
+5. ~~Mensaje de éxito al enviar~~ — hecho (envío real, no simulado) y **mensaje de redirección** para empresas que buscan contratar servicios (no candidatos) — hecho.
 6. **Accesibilidad + SEO** con una revisión dedicada (lo hecho hasta ahora es responsive verificado visualmente en desktop/mobile, pero no una auditoría de accesibilidad/SEO formal).
 7. **Decisión de idioma**: idioma base fijado como español (todo el contenido implementado está en español, como `CONTEXT.md`); sigue pendiente decidir si se añade inglés como mejora.
 8. ~~Documentar la nueva app con su propio README~~ — hecho (`uis/website/README.md` + `README.es.md`).
 
 ## Próximos pasos inmediatos (en orden sugerido)
 
-1. Construir el formulario de `/talento` con validaciones reales (no solo `required` de HTML) y los mensajes de error literales especificados en `CONTEXT.md`.
-2. Implementar el mensaje de éxito (simulado) y el mensaje de redirección para empresas.
-3. Pasar una revisión de accesibilidad/SEO dedicada (contraste, labels de formulario, orden de encabezados, `lang`, meta tags) antes de dar el Hito 1 por terminado.
-4. Decidir si se añade inglés como segundo idioma.
-5. Actualizar este `progress.md` (marcar casillas, mover "próximos pasos" hacia adelante) al cerrar cada paso — no dejar que quede desactualizado.
+1. Pasar una revisión de accesibilidad/SEO dedicada (contraste, labels de formulario, orden de encabezados, `lang`, meta tags) antes de dar el Hito 1 por terminado.
+2. Decidir si se añade inglés como segundo idioma.
+3. Actualizar este `progress.md` (marcar casillas, mover "próximos pasos" hacia adelante) al cerrar cada paso — no dejar que quede desactualizado.
 
 ## Fuera de alcance del Hito 1 (pero en el radar)
 
-- Backend FastAPI real en `services/` (el formulario del Hito 1 solo *simula* el envío).
+- Persistencia real de los registros de talento (base de datos) — hoy `POST /talent` valida y responde pero no guarda nada.
 - El "Agente Inteligente de Selección y Soporte" descrito en `company-choice.md` — pertenece a hitos posteriores (Agentes/RAG/Backend), pero el modelado de `Candidate`/`Vacancy` en `src/` debería mantenerse compatible con esa visión.
 - Resolver los huecos de tooling de raíz (`package.json`, `docker-compose.yml`) más allá de lo estrictamente necesario para `uis/website/`.
